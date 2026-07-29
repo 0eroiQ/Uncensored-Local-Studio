@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  🎥 <strong>Watch the Setup & Demo Video:</strong> <a href="https://youtu.be/qvamkqmLPn8">https://youtu.be/qvamkqmLPn8</a>
+  🎥 <strong>Watch the Setup & Demo Video:</strong> <a href="https://youtu.be/yeFvP3SWMak">https://youtu.be/yeFvP3SWMak</a>
 </p>
 
 <p align="center">
