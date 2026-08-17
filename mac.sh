@@ -36,6 +36,7 @@ DIST_INDEX="$APP_DIR/dist/index.html"
 SETUP_SCRIPT="$SCRIPT_DIR/scripts/setup/setup.sh"
 SERVE_SCRIPT="$SCRIPT_DIR/scripts/server/serve.cjs"
 UPDATER_PRELOAD="$SCRIPT_DIR/scripts/server/updater-preload.cjs"
+WORK_PRELOAD="$SCRIPT_DIR/scripts/server/work-preload.cjs"
 
 FRONTEND_PORT="${FRONTEND_PORT:-1420}"
 LLM_PORT="${LLM_PORT:-10086}"
@@ -223,13 +224,16 @@ echo "  Starting Uncensored AI Studio..."
 export PATH="$NODE_DIR/bin:$PATH"
 export FRONTEND_PORT="$FRONTEND_PORT"
 
-# Run server in background and capture PID. The updater preload adds the
-# /api/update/* routes without changing the main portable server.
+# Load optional local API extensions before the main portable server.
+PRELOAD_ARGS=()
 if [[ -f "$UPDATER_PRELOAD" ]]; then
-  "$NODE_BIN" -r "$UPDATER_PRELOAD" "$SERVE_SCRIPT" &
-else
-  "$NODE_BIN" "$SERVE_SCRIPT" &
+  PRELOAD_ARGS+=("-r" "$UPDATER_PRELOAD")
 fi
+if [[ -f "$WORK_PRELOAD" ]]; then
+  PRELOAD_ARGS+=("-r" "$WORK_PRELOAD")
+fi
+
+"$NODE_BIN" "${PRELOAD_ARGS[@]}" "$SERVE_SCRIPT" &
 SERVER_PID=$!
 
 # Wait for server to be ready
@@ -244,8 +248,7 @@ else
 fi
 
 echo ""
-echo "  ============================================================"
-echo "   Running!"
+echo "  ============================================================"necho "   Running!"
 echo "   Web UI:     http://localhost:${FRONTEND_PORT}"
 echo "   GPU API:    Auto-selected by the app (starts at 8080)"
 echo "   Text API:   Starts when a GGUF model is loaded (port ${LLM_PORT})"
@@ -253,8 +256,7 @@ echo "   Speech:     Managed locally by the app"
 echo "   TTS:        Managed locally by the app"
 echo ""
 echo "   Press Ctrl+C in this window to stop all services."
-echo "  ============================================================"
-echo ""
+echo "  ============================================================"necho ""
 
 # Cleanup on exit
 cleanup() {
