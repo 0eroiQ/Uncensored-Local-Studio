@@ -512,7 +512,7 @@ function WorkPanel({ onClose }) {
   const title = project.connected ? project.name : "No project selected";
 
   return (
-    <div style={{ position: "absolute", inset: "68px 0 0 0", zIndex: 50, display: "flex", flexDirection: "column", background: "var(--md-sys-color-surface, #101116)", color: "var(--md-sys-color-on-surface, #f2f2f5)", borderTop: "1px solid var(--md-sys-color-outline-variant, #30313a)" }}>
+    <div style={{ position: "absolute", inset: "68px 0 0 0", zIndex: 50, display: "flex", flexDirection: "column", background: "#101116", color: "var(--md-sys-color-on-surface, #f2f2f5)", borderTop: "1px solid var(--md-sys-color-outline-variant, #30313a)" }}>
       <div style={{ height: 54, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 18px", borderBottom: "1px solid var(--md-sys-color-outline-variant, #30313a)", background: "var(--md-sys-color-surface-container-low, #15161c)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
           <Code2 size={20} />
@@ -609,15 +609,51 @@ function WorkPanel({ onClose }) {
             <div><strong>Git</strong><div style={{ marginTop: 3, opacity: 0.65 }}>{project.git ? `${project.branch || "detached"} • ${project.changes || 0} change(s)` : "No Git repository detected"}</div></div>
             <div><strong>Editor</strong><div style={{ marginTop: 3, opacity: 0.65 }}>{selectedFile ? selectedFile.path : "No file open"}</div></div>
             <div><strong>Model</strong><div style={{ marginTop: 3, opacity: 0.65, wordBreak: "break-word" }}>{activeModel}</div></div>
-            <div><strong>Work history</strong><div style={{ marginTop: 3, opacity: 0.65 }}>{historyLoaded ? "Restored from USB" : messages.length ? "Saving on USB" : "No previous session"}</div></div>
+            <div><strong>Work history</strong><div style={{ marginTop: 3, opacity: 0.65 }}>{historyLoaded ? `${messages.length} saved message(s) restored from USB` : "No previous session"}</div></div>
             <div><strong>Project Memory</strong><div style={{ marginTop: 3, opacity: 0.65 }}>{memoryLoaded ? "Loaded from USB" : "No saved memory yet"}</div></div>
-            <div><strong>Context scan</strong><div style={{ marginTop: 3, opacity: 0.65 }}>{contextStats.contextFiles ? `${contextStats.contextFiles} files supplied • ${contextStats.fileCount} files indexed` : "Built on first prompt"}</div></div>
-            {thinking && <div style={{ display: "flex", alignItems: "center", gap: 7, opacity: .8 }}><Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> Local model working…</div>}
+            <div><strong>Context scan</strong><div style={{ marginTop: 3, opacity: 0.65 }}>{contextStats.fileCount > 0 || contextStats.folderCount > 0 ? `${contextStats.contextFiles} file(s) supplied • ${contextStats.fileCount} files / ${contextStats.folderCount} folders indexed` : "Built on first prompt"}</div></div>
           </div>
         </aside>
       </div>
     </div>
   );
+}
+
+function setNativeWorkspaceVisibility(main, visible) {
+  if (!main) return;
+  const workHost = document.getElementById("local-work-main-host");
+  for (const workspace of main.querySelectorAll(":scope > .workspace-area, :scope > [class*='workspace-area']")) {
+    if (workspace === workHost || workHost?.contains(workspace)) continue;
+    if (visible) {
+      if (workspace.dataset.workPrevDisplay !== undefined) {
+        workspace.style.display = workspace.dataset.workPrevDisplay;
+        delete workspace.dataset.workPrevDisplay;
+      } else {
+        workspace.style.removeProperty("display");
+      }
+      workspace.removeAttribute("aria-hidden");
+    } else {
+      if (workspace.dataset.workPrevDisplay === undefined) workspace.dataset.workPrevDisplay = workspace.style.display || "";
+      workspace.style.display = "none";
+      workspace.setAttribute("aria-hidden", "true");
+    }
+  }
+}
+
+function setNativeNavActive(nav, workHost, workOpen) {
+  if (!nav) return;
+  for (const item of nav.querySelectorAll(".nav-item")) {
+    if (workHost?.contains(item)) continue;
+    if (workOpen) {
+      if (item.classList.contains("active")) item.dataset.workWasActive = "true";
+      item.classList.remove("active");
+      item.setAttribute("aria-selected", "false");
+    } else if (item.dataset.workWasActive === "true") {
+      item.classList.add("active");
+      item.setAttribute("aria-selected", "true");
+      delete item.dataset.workWasActive;
+    }
+  }
 }
 
 export default function WorkIntegration() {
@@ -658,13 +694,50 @@ export default function WorkIntegration() {
 
   useEffect(() => {
     const nav = document.querySelector(".nav-list");
-    if (!nav) return;
-    const handler = (event) => { if (!event.target.closest("#local-work-nav-host")) setOpen(false); };
+    const main = document.querySelector(".main-content");
+    const workHost = document.getElementById("local-work-nav-host");
+    if (!nav || !main) return undefined;
+
+    setNativeWorkspaceVisibility(main, !open);
+    setNativeNavActive(nav, workHost, open);
+
+    if (open) {
+      main.dataset.workExclusive = "true";
+      document.body.dataset.workExclusive = "true";
+    } else {
+      delete main.dataset.workExclusive;
+      delete document.body.dataset.workExclusive;
+    }
+
+    return () => {
+      setNativeWorkspaceVisibility(main, true);
+      setNativeNavActive(nav, workHost, false);
+      delete main.dataset.workExclusive;
+      delete document.body.dataset.workExclusive;
+    };
+  }, [open, mainMount, navMount]);
+
+  useEffect(() => {
+    const nav = document.querySelector(".nav-list");
+    if (!nav) return undefined;
+    const handler = (event) => {
+      if (!event.target.closest("#local-work-nav-host")) setOpen(false);
+    };
     nav.addEventListener("click", handler);
     return () => nav.removeEventListener("click", handler);
   }, []);
 
-  const navItem = navMount ? createPortal(<div className={`nav-item ${open ? "active" : ""}`} onClick={() => setOpen(true)} title="Local coding workspace"><Code2 size={20} /><span>Work</span></div>, navMount) : null;
+  const navItem = navMount ? createPortal(
+    <div
+      className={`nav-item ${open ? "active" : ""}`}
+      aria-selected={open ? "true" : "false"}
+      onClick={() => setOpen(true)}
+      title="Local coding workspace"
+    >
+      <Code2 size={20} /><span>Work</span>
+    </div>,
+    navMount,
+  ) : null;
   const workspace = open && mainMount ? createPortal(<WorkPanel onClose={() => setOpen(false)} />, mainMount) : null;
   return <>{navItem}{workspace}</>;
 }
