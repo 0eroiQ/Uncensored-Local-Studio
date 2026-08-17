@@ -1,315 +1,452 @@
-#  Uncensored AI Studio
+# Uncensored AI Studio
 
 <p align="center">
-  <strong>A premium, zero-configuration local AI studio and offline GUI for Stable Diffusion (Image Generation), LLMs (Chat), Whisper (Speech-to-Text), and Kokoro (Text-to-Speech). Powered by hardware-accelerated GPU and NPU execution on Windows, Linux, and macOS.</strong>
+  <strong>A portable local AI studio for image generation, private LLM chat, whole-project coding, speech-to-text, and text-to-speech.</strong>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Offline-100%25-green?style=for-the-badge&logo=offline" alt="100% Offline" />
+  <img src="https://img.shields.io/badge/Local_Inference-100%25-green?style=for-the-badge" alt="100% Local Inference" />
   <img src="https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-blue?style=for-the-badge" alt="Platforms" />
   <img src="https://img.shields.io/badge/License-MIT-orange?style=for-the-badge" alt="License" />
 </p>
 
-<p align="center">
-  🎥 <strong>Watch the Setup & Demo Video:</strong> <a href="https://youtu.be/yeFvP3SWMak">https://youtu.be/yeFvP3SWMak</a>
-</p>
-
-<p align="center">
-  <a href="https://youtu.be/yeFvP3SWMak">
-    <img src="https://img.youtube.com/vi/yeFvP3SWMak/maxresdefault.jpg" alt="Uncensored AI Studio Video Tutorial" width="800" style="border-radius: 8px;" />
-  </a>
-</p>
+> [!IMPORTANT]
+> AI inference runs locally on your machine. Internet access is only needed for optional tasks such as downloading models, searching Hugging Face, or installing source updates from GitHub.
 
 ---
 
+## Table of Contents
 
-## 📖 Table of Contents
-* [What is Uncensored AI Studio?](#what-is-uncensored-ai-studio)
-* [Key Features](#key-features)
-* [Workspace & Engine Architecture](#workspace-architecture)
-* [Supported Models](#supported-models)
-* [Folder Architecture](#folder-architecture)
-* [Getting Started](#getting-started)
-  * [Windows Setup](#windows-setup)
-  * [Linux Setup](#linux-setup)
-  * [macOS Setup](#macos-setup)
-* [Hardware Compatibility & Acceleration](#hardware-compatibility-acceleration)
-* [Troubleshooting & FAQ](#troubleshooting-faq)
-* [Building From Source](#building-from-source)
-* [Licensing](#licensing)
-
----
-
-## <a id="what-is-uncensored-ai-studio"></a>📖 What is Uncensored AI Studio?
-
-**Uncensored AI Studio** is a completely offline, zero-setup, self-contained AI studio for Windows, Linux, and macOS. Unlike cloud-based AI systems, it runs entirely on your own hardware with no censorship, tracking, subscriptions, or login requirements.
-
-It unifies four major local AI capabilities into one high-performance desktop interface:
-1. **🎨 Image Generation (Stable Diffusion):** Generate and edit high-quality images offline using `.safetensors`, `.gguf`, or `.ckpt` model weights.
-2. **💬 Text Chat (LLMs):** Converse privately with open-source language models (GGUF format) powered by official, high-performance `llama.cpp` backends.
-3. **🎙️ Speech-to-Text (Whisper):** Transcribe voice recordings and speech to text in real-time with an integrated `whisper.cpp` engine.
-4. **🗣️ Text-to-Speech (Kokoro TTS):** Convert text outputs into highly natural, lifelike vocal audio offline using the `Kokoro-82M` ONNX model.
+- [What is Uncensored AI Studio?](#what-is-uncensored-ai-studio)
+- [Key Features](#key-features)
+- [Work: Local Coding Agent](#work-local-coding-agent)
+- [Local Coding Models](#local-coding-models)
+- [Project Memory and Continuity](#project-memory-and-continuity)
+- [Safety Model](#work-safety-model)
+- [Updates](#in-app-updates)
+- [Workspace Architecture](#workspace-architecture)
+- [Supported Models](#supported-models)
+- [Folder Architecture](#folder-architecture)
+- [Getting Started](#getting-started)
+- [Hardware Compatibility](#hardware-compatibility)
+- [Troubleshooting](#troubleshooting)
+- [Building From Source](#building-from-source)
+- [License](#license)
 
 ---
 
-## <a id="key-features"></a>🌟 Key Features
+## What is Uncensored AI Studio?
 
-*   **100% Offline & Private:** Run inferences locally. No internet, telemetry, cloud logging, or API keys required.
-*   **Zero-Install Portability:** Entire runtime (Node.js, models, GPU backends) is self-contained. Zero global system environment changes.
-*   **Auto-Configured Acceleration:** Auto-detects hardware specs to load CUDA (Nvidia), ROCm (AMD), Vulkan (Intel/AMD/NVIDIA), Metal (macOS), or OpenVINO (Intel NPU) backends.
-*   **Integrated Model Manager:** Paste Hugging Face URLs to download weights directly, or drag-and-drop local weights to import them.
-*   **Live Performance Monitor:** Track CPU, RAM, GPU, and VRAM utilization in real-time directly inside the web UI.
-*   **Local Output Gallery:** Saves generated images side-by-side with prompt parameters and metadata JSON files.
+**Uncensored AI Studio** is a self-contained local AI environment for Windows, Linux, and macOS. It bundles portable runtimes and local backend engines so you can run AI workloads without sending prompts, project code, generated images, or speech content to a hosted inference API.
 
----
+The application currently combines five major capabilities:
 
-## <a id="workspace-architecture"></a>⚙️ Workspace & Engine Architecture
-
-To avoid exhausting system RAM or VRAM, text and image engines are mutually exclusive by default. You can switch between workspaces inside the UI:
-
-*   **Image Generation Workspace:** Uses a dedicated `stable-diffusion.cpp` backend node. Model weights are stored in `app/models/`.
-*   **Text Chat Workspace:** Uses a portable `llama.cpp` server backend. Model weights (.gguf) are stored in `app/llm-models/`. A small Qwen2.5 Coder starter model can be downloaded directly from the Text Chat panel.
-*   **Speech Worker (Whisper):** Runs a localized `whisper-cli` process to convert your vocal input to text.
-*   **Audio Output (Kokoro TTS):** Utilizes `kokoro-js` locally on the server side to read responses in natural voices.
+1. **Image Generation** — Stable Diffusion compatible local checkpoints through `stable-diffusion.cpp`.
+2. **Text Chat** — Local GGUF chat/instruct models through `llama.cpp`.
+3. **Work** — A local coding workspace and whole-project agent for real source folders.
+4. **Speech-to-Text** — Local Whisper transcription through `whisper.cpp`.
+5. **Text-to-Speech** — Local Kokoro TTS.
 
 ---
 
-## <a id="supported-models"></a>Supported Models
+## Key Features
 
-The app is designed around single-file local models that can be loaded directly by the bundled backend engines.
+- **Local inference:** No cloud AI API key is required for image, text, speech, TTS, or Work inference.
+- **Portable runtime:** Node.js, model folders, downloaded backends, generated outputs, chat history, and Work memory can stay inside the installation folder or on an external drive.
+- **Hardware acceleration:** CUDA, ROCm, Vulkan, Metal, CPU fallback, and selected OpenVINO/CoreML paths depending on platform.
+- **Integrated Model Manager:** Download supported models directly from known URLs or import local model files.
+- **Persistent download progress:** Active model downloads can be monitored even if the model panel is closed and reopened.
+- **Live telemetry:** CPU, RAM, GPU, and VRAM usage is shown in the UI where supported.
+- **USB-friendly data layout:** Models, generated outputs, chat history, Work memory, backends, and local runtimes are excluded from normal source updates.
+- **In-app updater:** Update the application source from GitHub `main`, rebuild the UI locally, restart, and roll back when a backup is available.
+
+---
+
+## Work: Local Coding Agent
+
+**Work** is the local coding workspace inside Uncensored AI Studio.
+
+Opening a project gives Work controlled access to that project folder. You do **not** need to manually select every source file before asking a coding question.
+
+Typical flow:
+
+```text
+Open Project
+    ↓
+Project sandbox
+    ↓
+Local Qwen coding model
+    ↓
+search project
+    ↓
+read relevant files
+    ↓
+edit/create files
+    ↓
+inspect Git status / diff
+    ↓
+request test/build command
+    ↓
+user approves command
+    ↓
+inspect result
+    ↓
+repeat until finished
+    ↓
+save Work history + memory locally
+```
+
+### What Work can do
+
+- Open a real project folder using the native folder picker.
+- Browse the actual project tree.
+- Open and manually edit text/code files.
+- Search the whole selected project for symbols, filenames, and text.
+- Read relevant source files automatically without requiring the user to open them first.
+- Modify existing files with exact replacements.
+- Create new files inside the selected project.
+- Inspect Git branch, status, and diffs when the project is a Git repository.
+- Request approved commands for tests, builds, linters, and other allowlisted developer tools.
+- Maintain a persistent Work conversation for each project.
+- Load project-specific memory from local storage.
+
+### Whole-project behavior
+
+Work does not dump an entire repository into the model context at once. Instead, it uses a bounded project scan plus agent tools.
+
+The model can repeatedly request operations such as:
+
+```text
+search_project
+read_file
+replace_in_file
+create_file
+git_status
+git_diff
+run_command
+finish
+```
+
+This lets a local model work across projects that are much larger than the model's immediate context window.
+
+---
+
+## Local Coding Models
+
+Work includes dedicated local coding-model choices stored in `app/llm-models/`.
+
+| Model | Quantization | Approx. size | Recommended memory | Purpose |
+| :--- | :--- | :--- | :--- | :--- |
+| **Qwen2.5-Coder 14B Instruct** | Q4_K_M | ~8.99 GB | 16 GB+ | Recommended coding model for capable 16 GB systems. |
+| **Qwen3 8B** | Q4_K_M | ~5 GB | 12 GB+ | Faster/lighter backup option. |
+| **Qwen3-Coder 30B-A3B Instruct** | Q4_K_M | ~18.6 GB | 32 GB+ recommended | Larger coding model for higher-memory systems. |
+
+The Work model picker detects system RAM and blocks obviously unsuitable loads where possible.
+
+> [!NOTE]
+> Downloading a model requires internet access. After the model has been downloaded, Work inference runs locally through the bundled `llama.cpp` server.
+
+---
+
+## Project Memory and Continuity
+
+Local model weights do not automatically retrain themselves after each task. Work provides continuity using persistent local context instead.
+
+For each project, Work can combine:
+
+```text
+Local coding model
+      +
+Current project files
+      +
+Previous Work conversation
+      +
+Project Memory
+      ↓
+Continue where the project left off
+```
+
+Work history and Project Memory are stored locally in the application's data folders. This allows the same project to recover prior decisions and context after the app is restarted.
+
+Useful Project Memory examples:
+
+- architecture decisions
+- important commands
+- coding conventions
+- bugs already fixed
+- files that matter to the project
+- future tasks
+- migration notes
+- implementation constraints
+
+Memory is scoped per project rather than shared blindly across unrelated projects.
+
+---
+
+## Work Safety Model
+
+Work is designed around a selected-project sandbox.
+
+Current protections include:
+
+- Absolute paths outside the opened project are blocked.
+- `../` path escapes are blocked.
+- Symlink escapes outside the selected project are blocked.
+- Whole-drive access is rejected.
+- Binary files are not treated as editable source text.
+- There is no autonomous delete-file tool in the current Work agent.
+- Agent edits create local backup snapshots before modifying project files.
+- Shell pipelines, redirects, command substitution, and multiline shell commands are blocked by the command runner.
+- Commands must be from an allowlist of developer tools.
+- Commands require explicit user approval before execution.
+- The agent is instructed not to perform Git history rewriting, remote pushes, package publishing, or network installation actions as part of its normal loop.
+
+Work is still software that can modify files. Keep normal source-control backups for important projects.
+
+---
+
+## In-App Updates
+
+The app includes **Settings → Updates** for source updates from:
+
+```text
+0eroiQ/Uncensored-Local-Studio
+branch: main
+```
+
+Normal update flow:
+
+```text
+Check for Updates
+      ↓
+Update Now
+      ↓
+download exact GitHub commit
+      ↓
+create rollback backup
+      ↓
+replace application source only
+      ↓
+rebuild frontend locally
+      ↓
+Restart Now
+```
+
+The updater preserves local user/runtime data such as model weights, generated outputs, chat history, downloaded backends, Work memory, and other ignored runtime folders.
+
+If GitHub's commits API fails or returns an unexpected HTML response, the updater falls back to resolving the `main` branch SHA through Git where available. If neither verification method works, the UI reports that the update could not be verified instead of incorrectly saying the installation is current.
+
+---
+
+## Workspace Architecture
+
+To avoid unnecessary RAM/VRAM pressure, heavyweight AI engines are managed by the local server and can be switched as needed.
+
+- **Image Generation:** `stable-diffusion.cpp`, weights in `app/models/`.
+- **Text Chat:** `llama.cpp`, GGUF weights in `app/llm-models/`.
+- **Work:** reuses the local `llama.cpp` coding model and adds sandboxed project tools.
+- **Speech:** `whisper.cpp`, models in `app/speech-models/`.
+- **TTS:** Kokoro runtime/models under `app/tts-runtime/`, `app/tts-models/`, and `app/tts-cache/`.
+
+On macOS Apple Silicon, local LLM inference uses the Metal-capable llama.cpp backend.
+
+---
+
+## Supported Models
 
 ### Image generation
 
-| Model type | Supported | Put files in | Notes |
+| Model type | Supported | Folder | Notes |
 | :--- | :--- | :--- | :--- |
-| Stable Diffusion 1.5 checkpoints | Yes | `app/models/` | Best compatibility. Use `.safetensors` or `.ckpt` files. |
-| SDXL checkpoints | Yes | `app/models/` | Supported as single-file checkpoints. Requires more RAM/VRAM than SD 1.5. |
-| Single-file SD/SDXL GGUF checkpoints | Limited | `app/models/` | Only complete single-file checkpoints are supported. |
-| OpenVINO image model folders | Intel NPU only | `app/openvino-models/` | Download from the Model Manager after running the OpenVINO setup. |
-| CoreML image models | Apple Silicon only | `app/models/` | Requires macOS on Apple Silicon and the CoreML setup path. |
-| Flux, HiDream, Hunyuan, Wan, Qwen Image, Z-Image workflows | No | N/A | These usually require separate diffusion, VAE, and text encoder files and are not one-click checkpoint loads in this app. |
-| LoRA, ControlNet, VAE-only, text-encoder-only, or diffusion-only files | No | N/A | Companion files are not loaded as standalone image models. |
+| Stable Diffusion 1.5 checkpoints | Yes | `app/models/` | Best compatibility with `.safetensors` / `.ckpt`. |
+| SDXL checkpoints | Yes | `app/models/` | Higher memory requirements. |
+| Single-file SD/SDXL GGUF checkpoints | Limited | `app/models/` | Must be complete single-file checkpoints. |
+| OpenVINO image model folders | Selected Intel NPU paths | `app/openvino-models/` | Requires matching OpenVINO setup. |
+| CoreML image models | Selected Apple Silicon paths | `app/models/` | Requires the CoreML setup path. |
+| Multi-component Flux/HiDream/Hunyuan/Wan/Qwen Image/Z-Image workflows | Not one-click | N/A | These generally require separate model components. |
 
-Known-good image models available from the Model Manager:
+### Text, Work, speech, and TTS
 
-| Name | Filename | Type | Approx. size | Recommended use |
-| :--- | :--- | :--- | :--- | :--- |
-| Juggernaut XL v9 Lightning | `Juggernaut_RunDiffusionPhoto2_Lightning_4Steps.safetensors` | SDXL | 6.6 GB | High-quality photorealism on mid/high tier machines. |
-| DreamShaper XL Lightning | `DreamShaperXL_Lightning.safetensors` | SDXL | 6.6 GB | General SDXL images, fantasy, renders, and illustration. |
-| DreamShaper 8 | `DreamShaper_8_pruned.safetensors` | SD 1.5 | 2.1 GB | Faster, lower-memory image generation. |
-| CyberRealistic V8 | `CyberRealistic_V8_FP16.safetensors` | SD 1.5 | 2.0 GB | Realistic SD 1.5 images and lower-memory systems. |
-| Rev Animated | `rev-animated-v1-2-2.safetensors` | SD 1.5 | 2.0 GB | Stylized/anime SD 1.5 images. |
-| LCM DreamShaper OpenVINO | `OpenVINO/LCM_Dreamshaper_v7-fp16-ov` | OpenVINO | 2.7 GB | Intel Core Ultra NPU test model. |
-
-### Text, speech, and TTS
-
-| Workspace | Supported model files | Put files in | Notes |
+| Workspace | Model files | Folder | Notes |
 | :--- | :--- | :--- | :--- |
-| Text Chat | `.gguf` llama.cpp models | `app/llm-models/` | Use single-file GGUF chat/instruct models. Vision models may also require a matching `mmproj` file. |
-| Speech-to-Text | whisper.cpp `.bin` models | `app/speech-models/` | Use Whisper GGML/whisper.cpp model files. |
-| Text-to-Speech | Kokoro `.json` manifests and model assets | `app/tts-models/` / `app/tts-runtime/` | Use the built-in Kokoro setup and Model Manager entries. |
-
-> [!NOTE]
-> Linux release binaries are built for Ubuntu 24.04-era systems and require `glibc 2.38+` plus `GLIBCXX_3.4.32+`. On older Ubuntu/Debian VMs, a model such as CyberRealistic may be valid but the backend can still fail before loading it. Upgrade the VM OS or build the backend from source.
+| Text Chat | `.gguf` | `app/llm-models/` | llama.cpp-compatible chat/instruct models. |
+| Work | `.gguf` | `app/llm-models/` | Coding/instruct GGUF models; dedicated Work picker included. |
+| Speech-to-Text | whisper.cpp `.bin` | `app/speech-models/` | Local Whisper models. |
+| Text-to-Speech | Kokoro manifests/assets | `app/tts-models/`, `app/tts-runtime/` | Local Kokoro setup. |
 
 ---
 
-## <a id="folder-architecture"></a>📁 Folder Architecture
+## Folder Architecture
 
-```
-Uncensored-AI-Studio/
-├── windows.bat                # Windows Launcher (Double-click entrypoint)
-├── linux.sh                   # Linux Launcher (Terminal entrypoint)
-├── mac.sh                     # macOS Launcher (Terminal entrypoint)
-├── LICENSE                    # MIT Open Source License
-├── .gitignore                 # Excludes models and output images from version control
-├── README.md                  # Detailed system documentation
+```text
+Uncensored-Local-Studio/
+├── windows.bat
+├── linux.sh
+├── mac.sh
+├── README.md
+├── LICENSE
 ├── scripts/
-│   ├── setup/                 # Platform setup and backend installers
-│   ├── reset/                 # Clean install & environment repair
-│   ├── server/                # UI web server and backend lifecycle manager
-│   ├── workers/               # Local worker processes
-│   ├── build/                 # Optional source build helpers
-│   └── config/                # Runtime configuration catalogs
+│   ├── setup/
+│   ├── reset/
+│   ├── server/
+│   │   ├── serve.cjs
+│   │   ├── updater-preload.cjs
+│   │   ├── work-preload.cjs
+│   │   └── work-agent-preload.cjs
+│   ├── workers/
+│   ├── build/
+│   └── config/
 └── app/
-    ├── frontend/              # UI source code (Vite + React)
-    ├── models/                # Place image weights here (.safetensors, .gguf, .ckpt)
-    ├── llm-models/            # Place text GGUF weights here
-    └── outputs/               # Saved images and parameters metadata
+    ├── frontend/              # React/Vite UI source
+    ├── dist/                  # Locally built frontend
+    ├── models/                # Image model weights
+    ├── llm-models/            # Chat + Work GGUF models
+    ├── speech-models/         # Whisper models
+    ├── tts-models/            # TTS manifests/models
+    ├── outputs/               # Generated images
+    ├── chat-history/          # Text Chat + Work history/memory
+    ├── work-backups/          # Backups created before Work agent edits
+    ├── config/                # Local runtime/update/Work state
+    ├── backend/               # Image backends
+    ├── llm-backend/           # llama.cpp backends
+    ├── speech-backend/        # whisper.cpp backends
+    └── tools/                 # Portable Node.js and tools
 ```
 
----
-
-## <a id="getting-started"></a>🚀 Getting Started
-
-Ensure you have a modern web browser installed. Follow the quick guide below for your platform:
-
-### Windows Setup
-
-1. **Launch:** Double-click **`windows.bat`**.
-   > [!NOTE]
-   > On the first run, the script will automatically download a portable Node.js runtime and configure pre-compiled GPU/CPU backend binaries.
-2. **Add Models:** Drop `.safetensors`, `.gguf`, or `.ckpt` weights into `app/models/` (or download them via the **Model Manager** tab in the UI).
-3. **Generate:** Open `http://localhost:1420` in your browser, select your model, and write a prompt.
-
-### Linux Setup
-
-1. **Make executable:** Open a terminal in the project folder and make the script executable:
-   ```bash
-   chmod +x linux.sh
-   ```
-2. **Launch:** Run **`./linux.sh`**.
-   - **NVIDIA GPU Users:** You will be prompted to set up the high-performance **CUDA** backend (downloads prebuilt or automatically compiles from source as a fallback).
-   - **AMD Radeon Performance:** Run with **`./linux.sh --max-perf`** to add the ROCm backend (~1.3 GB download).
-   - **Intel Core Ultra NPU:** Run with **`./linux.sh --setup-openvino`** to configure Intel NPU support (requires Intel Linux NPU driver).
-3. **Add Models:** Drop your weights into `app/models/` or download them via the **Model Manager** tab.
-4. **Generate:** Open `http://localhost:1420` in your browser.
-
-### macOS Setup
-
-1. **Make executable:** Open a terminal in the project folder and make the script executable:
-   ```bash
-   chmod +x mac.sh
-   ```
-2. **Launch:** Run **`./mac.sh`**.
-   > [!IMPORTANT]
-   > The prebuilt macOS backend is optimized for **Apple Silicon (M1 or newer)** and uses **Metal** GPU acceleration. *(macOS Intel hardware is completely unsupported)*.
-3. **Add Models:** Drop your weights into `app/models/` or download them via the **Model Manager** tab.
-4. **Generate:** Open `http://localhost:1420` in your browser.
+Most runtime/data folders are excluded from Git source updates so local models and user data are not replaced by normal application updates.
 
 ---
 
-## <a id="hardware-compatibility-acceleration"></a>🖥️ Hardware Compatibility & Acceleration
+## Getting Started
 
 ### Windows
 
-| GPU Vendor | Tech | Status | Notes |
-| :--- | :--- | :--- | :--- |
-| **Nvidia** | CUDA | ✅ Native | Maps `sd-cuda.exe` with Nvidia SDK 12 optimizations. |
-| **AMD Radeon** | Vulkan | ✅ Native | Maps `sd-vulkan.exe` with Vulkan API acceleration. |
-| **Intel Arc** | Vulkan | ✅ Native | Maps `sd-vulkan.exe` for Intel hardware. |
-| **Integrated / None** | CPU | ⚠️ Fallback | Runs on logical CPU threads (slow). |
+1. Double-click `windows.bat`.
+2. Let the first-run setup install the portable runtime/backends if required.
+3. Open `http://localhost:1420`.
+4. Download/import a model in Model Manager.
 
 ### Linux
 
-| GPU Vendor | Primary | Fallback | Notes |
-| :--- | :--- | :--- | :--- |
-| **NVIDIA** | CUDA / Vulkan | Vulkan / CPU | Auto-detects NVIDIA. Prompt-driven CUDA setup downloads prebuilt or compiles from source. Falls back to Vulkan for GTX. |
-| **AMD Radeon** | ROCm | Vulkan | ROCm provides best AMD performance when host ROCm drivers are available. |
-| **Intel Arc / integrated** | Vulkan | CPU | Cross-vendor Vulkan support. |
-| **Intel Core Ultra NPU** | OpenVINO NPU | CPU | Requires the Intel Linux NPU driver, kernel 6.6+, Python 3, and `./linux.sh --setup-openvino`. |
-| **Integrated / None** | CPU | — | Runs on logical CPU threads (slow). |
+```bash
+chmod +x linux.sh
+./linux.sh
+```
+
+Optional platform-specific setup paths may be available for CUDA, ROCm, Vulkan, CPU, or OpenVINO depending on hardware.
 
 ### macOS
 
-| Hardware | Primary | Fallback | Notes |
-| :--- | :--- | :--- | :--- |
-| **Apple Silicon (M1 or newer)** | Metal | CPU | Uses the official Darwin arm64 stable-diffusion.cpp backend. |
-
-> [!IMPORTANT]
-> **System Requirements & Notes:**
-> - **64-bit Windows 10 or Windows 11** is required for the portable Node.js 22 runtime used by the Windows launcher.
-> - **glibc 2.38 or newer** is required for the prebuilt Linux backends (Ubuntu 24.04, Fedora 40+, etc.). The setup script will warn you if your glibc is older.
-> - **Linux runtime libraries:** The prebuilt backends require `libgomp.so.1`; Vulkan additionally requires `libvulkan.so.1` and a working GPU driver. The setup script now checks these before installing a backend and prints the exact distro package command when one is missing.
-> - **Linux OpenVINO NPU:** Intel Core Ultra, x86_64 Linux, kernel 6.6+, a working `/dev/accel/accel0` device, Python 3 with `venv`, and the Intel Linux NPU driver are required.
-
----
-
-## <a id="troubleshooting-faq"></a>🛠️ Troubleshooting & FAQ
-
-<details>
-  <summary><strong> Reset Environment: If a build fails or you want to clear dependencies</strong></summary>
-  <p>Run <code>scripts/reset/reset.ps1</code> (Windows) or <code>scripts/reset/reset.sh</code> (Linux/macOS). This will clear temporary compilation and package caches to repair your environment. <em>(Note: This preserves your model weights and generated output images).</em></p>
-</details>
-
-<details>
-  <summary><strong> Linux backends fail to start with <code>GLIBC_2.38 not found</code></strong></summary>
-  <p>The prebuilt binaries require glibc 2.38+ (e.g. Ubuntu 24.04). If your distribution uses an older glibc version, you can upgrade your operating system or compile the backend from source (see the <a href="#building-from-source">Building From Source</a> guide below).</p>
-</details>
-
-<details>
-  <summary><strong> Port Conflicts: Default port address already busy</strong></summary>
-  <p>The web user interface runs on port <code>1420</code> by default. The GPU backend manager attempts to bind to port <code>8080</code> first, then automatically detects and falls back to a free system port if <code>8080</code> is already occupied.</p>
-</details>
-
-<details>
-  <summary><strong> Linux ROCm not loading for AMD Radeon GPUs</strong></summary>
-  <p>Ensure your AMD GPU hardware and host kernel are fully compatible with ROCm 7.13. If ROCm fails to initialize correctly, the application will automatically fall back to Vulkan acceleration.</p>
-</details>
-
-<details>
-  <summary><strong> Linux uses the integrated GPU instead of the discrete GPU</strong></summary>
-  <p>On dual-GPU Linux systems, Vulkan device order can put the integrated Intel GPU at <code>vulkan0</code> and the discrete AMD/NVIDIA GPU at <code>vulkan1</code>. The launcher now tries to prefer a discrete Vulkan device when <code>vulkaninfo --summary</code> is available. To force a device manually, start the app with <code>SD_VULKAN_DEVICE=vulkan1 ./linux.sh</code> or use another index such as <code>vulkan0</code>/<code>vulkan2</code>.</p>
-</details>
-
-<details>
-  <summary><strong> Windows exits with code <code>3221225781</code> (0xC0000135)</strong></summary>
-  <p>This code means Windows could not locate a required backend DLL:</p>
-  <ul>
-    <li><strong>For AMD/Intel Vulkan:</strong> Update your GPU driver to one with full Vulkan runtime support, then rerun the setup script to restore <code>app/backend/win/vulkan/</code>.</li>
-    <li><strong>For NVIDIA CUDA:</strong> Install or update your NVIDIA graphics driver, then rerun the setup script to restore the CUDA runtime DLLs.</li>
-  </ul>
-</details>
-
-<details>
-  <summary><strong> Generation shows "server is not responding or crashed"</strong></summary>
-  <p>This indicates that the local backend engine process terminated. Check your launch terminal (where you executed <code>windows.bat</code>, <code>./linux.sh</code>, or <code>./mac.sh</code>) for the exact console error. Common causes include glibc version mismatches, missing Vulkan drivers, or system out-of-memory (OOM) issues.</p>
-</details>
-
----
-
-## <a id="building-from-source"></a>🔨 Building From Source
-
-The setup script (`scripts/setup/setup.sh`) now automates building and setting up the CUDA backend from source when selected. If you want to manually build all backends (CPU, Vulkan, and CUDA) at once, you can run the included `scripts/build/build_from_source.sh` script.
-
-For macOS, the included `scripts/build/build_from_source.sh` builds the Metal backend and copies it to `app/backend/mac/sd`.
-
-### Requirements
-- `git`, `cmake`, `make` (or `ninja`), and a C++17 compiler (`g++` / `clang++`).
-- For **CUDA**: the NVIDIA CUDA toolkit (`nvcc`) must be on your `PATH`.
-- For **Vulkan**: the Vulkan SDK / loader, a compatible driver, and `glslc` (Ubuntu/Debian package: `glslc`).
-- For **ROCm**: AMD ROCm development libraries.
-- For **macOS Metal**: Apple Command Line Tools or Xcode.
-
-### Build commands
-
 ```bash
-# 1. Clone upstream
-git clone https://github.com/leejet/stable-diffusion.cpp.git
-cd stable-diffusion.cpp
-mkdir build && cd build
-
-# 2. Configure for your backend (pick ONE)
-# CPU only
-cmake .. -DSD_BUILD_SHARED_LIBS=ON -DCMAKE_BUILD_TYPE=Release
-
-# CUDA
-cmake .. -DSD_CUDA=ON -DSD_BUILD_SHARED_LIBS=ON -DCMAKE_BUILD_TYPE=Release
-
-# Vulkan
-cmake .. -DSD_VULKAN=ON -DSD_BUILD_SHARED_LIBS=ON -DCMAKE_BUILD_TYPE=Release
-
-# ROCm
-cmake .. -DSD_HIPBLAS=ON -DSD_BUILD_SHARED_LIBS=ON -DCMAKE_BUILD_TYPE=Release
-
-# macOS Metal
-cmake .. -DSD_METAL=ON -DSD_BUILD_SHARED_LIBS=ON -DCMAKE_BUILD_TYPE=Release
-
-# 3. Build
-cmake --build . --config Release -j$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu)
-
-# 4. Copy the binaries into this project
-cp bin/sd* /path/to/Uncensored-AI-Studio/app/backend/linux/<backend>/
+chmod +x mac.sh
+./mac.sh
 ```
 
-After copying, rename the server binary to match what `scripts/server/serve.cjs` expects:
-- Vulkan: `sd` → `sd-vulkan`
-- ROCm: `sd` → `sd-rocm`
+The prebuilt macOS path is intended for Apple Silicon and uses Metal acceleration for supported local backends.
 
-Then restart the app with `./linux.sh` (Linux) or `./mac.sh` (macOS).
+### Start Work
+
+1. Open **Work** in the sidebar.
+2. Click **Open Project** and choose a project folder.
+3. Open the **Work Local AI** model picker.
+4. Download or load a coding GGUF model.
+5. Use **Whole Project Agent** for project-wide coding tasks.
+
+Example prompt:
+
+```text
+Inspect this project, understand the architecture, find the cause of the login bug,
+fix the relevant files, show me the diff, and run the appropriate tests.
+```
+
+When a command is requested, review it and choose **Approve once** or **Reject**.
 
 ---
 
-## <a id="licensing"></a>📝 License
+## Hardware Compatibility
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file. Bundles [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) (MIT License). Model weights are subject to their respective creators' licenses.
+### Windows
+
+| Hardware | Primary backends |
+| :--- | :--- |
+| NVIDIA | CUDA / Vulkan / CPU fallback |
+| AMD Radeon | Vulkan / selected ROCm/HIP paths / CPU fallback |
+| Intel GPU | Vulkan / selected SYCL paths / CPU fallback |
+
+### Linux
+
+| Hardware | Primary backends |
+| :--- | :--- |
+| NVIDIA | CUDA / Vulkan / CPU |
+| AMD Radeon | ROCm / Vulkan / CPU |
+| Intel GPU | Vulkan / SYCL / CPU |
+| Intel Core Ultra NPU | Selected OpenVINO path |
+
+### macOS
+
+| Hardware | Primary backends |
+| :--- | :--- |
+| Apple Silicon | Metal / CPU fallback |
+
+> [!NOTE]
+> Model size matters as much as backend support. A model that exists on disk may still be too large to load comfortably on a low-memory system.
+
+---
+
+## Troubleshooting
+
+<details>
+  <summary><strong>Work shows no local coding model loaded</strong></summary>
+  <p>Open the Work model picker, download/import a supported GGUF model, then choose <strong>Load for Work</strong>. The model is stored under <code>app/llm-models/</code>.</p>
+</details>
+
+<details>
+  <summary><strong>A model is downloading but the model card looks idle</strong></summary>
+  <p>The Work download monitor follows the server-side download state and can show percentage, downloaded/total size, speed, ETA, destination, and cancel. Make sure you are running the latest source update if that monitor is missing.</p>
+</details>
+
+<details>
+  <summary><strong>Updates show unknown / cannot verify</strong></summary>
+  <p>The updater tries the GitHub commits API and then a Git fallback. If neither works, check internet access, GitHub availability, DNS/proxy settings, and whether <code>git</code> is available on the host.</p>
+</details>
+
+<details>
+  <summary><strong>Reset environment</strong></summary>
+  <p>Run <code>scripts/reset/reset.ps1</code> on Windows or <code>scripts/reset/reset.sh</code> on Linux/macOS. Keep backups of important projects and user data before performing destructive maintenance.</p>
+</details>
+
+<details>
+  <summary><strong>Linux backend reports GLIBC / GLIBCXX errors</strong></summary>
+  <p>Prebuilt Linux binaries may require a newer distribution/runtime. Upgrade the OS or build the backend from source.</p>
+</details>
+
+<details>
+  <summary><strong>Generation server crashed or is not responding</strong></summary>
+  <p>Check the terminal used to launch the app. Typical causes include missing runtime libraries, unsupported backend/device combinations, invalid model formats, or insufficient RAM/VRAM.</p>
+</details>
+
+---
+
+## Building From Source
+
+The repository includes build/setup helpers under `scripts/build/` and `scripts/setup/`.
+
+Typical requirements include:
+
+- `git`
+- `cmake`
+- `make` or `ninja`
+- a C++17 compiler
+- appropriate SDK/runtime for CUDA, Vulkan, ROCm/HIP, Metal, or other selected backend
+
+For example, a local `stable-diffusion.cpp` build can be configured with CMake for CPU, CUDA, Vulkan, ROCm, or Metal and then copied into the matching `app/backend/<platform>/<backend>/` folder expected by the launcher.
+
+The text/Work engine uses `llama.cpp` compatible server binaries under `app/llm-backend/`.
+
+---
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE).
+
+Bundled/open-source backend components and downloaded model weights remain subject to their own licenses and distribution terms.
