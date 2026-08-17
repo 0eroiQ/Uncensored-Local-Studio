@@ -348,3 +348,7 @@ http.createServer = function workPatchedCreateServer(options, listener) {
     ? previousCreateServer.call(http, wrapped)
     : previousCreateServer.call(http, actualOptions, wrapped);
 };
+
+// Load the whole-project coding-agent API after the base Work API so both
+// wrappers participate in the same portable HTTP server.
+require("./work-agent-preload.cjs");
