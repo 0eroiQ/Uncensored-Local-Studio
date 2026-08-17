@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import WorkIntegration from "./components/WorkIntegration";
 import WorkCodingModelsIntegration from "./components/WorkCodingModelsIntegration";
+import WorkDownloadMonitor from "./components/WorkDownloadMonitor";
 import WorkAgentIntegration from "./components/WorkAgentIntegration";
 import UpdateIntegration from "./components/UpdateIntegration";
 
@@ -11,6 +12,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
     <App />
     <WorkIntegration />
     <WorkCodingModelsIntegration />
+    <WorkDownloadMonitor />
     <WorkAgentIntegration />
     <UpdateIntegration />
   </React.StrictMode>,
