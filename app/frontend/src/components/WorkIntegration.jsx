@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   Bot,
@@ -10,6 +10,7 @@ import {
   Folder,
   FolderOpen,
   GitBranch,
+  Loader2,
   RefreshCw,
   Save,
   Send,
@@ -17,6 +18,12 @@ import {
   SquareTerminal,
   X,
 } from "lucide-react";
+import {
+  getLlmStatus,
+  listLlmConversations,
+  saveLlmConversation,
+  streamChatWithLlm,
+} from "../services/api";
 
 async function api(path, options = {}) {
   const res = await fetch(path, options);
@@ -25,6 +32,124 @@ async function api(path, options = {}) {
   try { data = JSON.parse(text || "{}"); } catch (_) {}
   if (!res.ok || data.ok === false) throw new Error(data.error || `Request failed (HTTP ${res.status})`);
   return data;
+}
+
+function fnv1a(value) {
+  let hash = 0x811c9dc5;
+  const text = String(value || "");
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+function shortFilename(value = "") {
+  return String(value).split(/[\\/]/).pop() || "";
+}
+
+function normalizeStoredContent(content) {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content.map((item) => typeof item === "string" ? item : item?.text || item?.content || "").join("\n");
+  }
+  return content?.text || content?.content || "";
+}
+
+const TEXT_EXTENSIONS = new Set([
+  ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".json", ".md", ".txt", ".css", ".scss", ".html",
+  ".py", ".rs", ".go", ".java", ".kt", ".swift", ".c", ".cc", ".cpp", ".h", ".hpp", ".cs", ".php",
+  ".rb", ".sh", ".bash", ".zsh", ".sql", ".toml", ".yaml", ".yml", ".xml", ".env", ".example",
+]);
+
+const IMPORTANT_NAMES = new Set([
+  "readme.md", "package.json", "architecture.md", "agents.md", "progress.md", "current_state_audit.md",
+  "database_schema.md", "migration_report.md", "tsconfig.json", "vite.config.js", "next.config.js", "next.config.mjs",
+  "eslint.config.js", "eslint.config.mjs", "dockerfile", "docker-compose.yml", "docker-compose.yaml",
+]);
+
+function extensionOf(filename = "") {
+  const lower = filename.toLowerCase();
+  const dot = lower.lastIndexOf(".");
+  return dot >= 0 ? lower.slice(dot) : "";
+}
+
+function shouldReadForContext(item) {
+  const lower = String(item?.name || "").toLowerCase();
+  return IMPORTANT_NAMES.has(lower) || TEXT_EXTENSIONS.has(extensionOf(lower));
+}
+
+async function buildProjectContext(project, selectedFile) {
+  const manifest = [];
+  const candidates = [];
+  const queue = [{ path: "", depth: 0 }];
+  const maxManifestItems = 180;
+  const maxDepth = 5;
+
+  while (queue.length > 0 && manifest.length < maxManifestItems) {
+    const current = queue.shift();
+    let data;
+    try {
+      data = await api(`/api/work/tree?path=${encodeURIComponent(current.path)}`);
+    } catch (_) {
+      continue;
+    }
+    for (const item of data.items || []) {
+      if (manifest.length >= maxManifestItems) break;
+      manifest.push(`${item.type === "folder" ? "[D]" : item.type === "file" ? "[F]" : "[L]"} ${item.path}`);
+      if (item.type === "folder" && current.depth < maxDepth) {
+        queue.push({ path: item.path, depth: current.depth + 1 });
+      } else if (item.type === "file" && shouldReadForContext(item)) {
+        const lower = item.path.toLowerCase();
+        let score = 0;
+        if (IMPORTANT_NAMES.has(item.name.toLowerCase())) score += 100;
+        if (/^(src|app|lib|server|api|supabase)\//i.test(item.path)) score += 30;
+        if (/test|spec/i.test(lower)) score += 8;
+        if (Number(item.size || 0) <= 40000) score += 10;
+        candidates.push({ ...item, score });
+      }
+    }
+  }
+
+  const selectedPath = selectedFile?.path || "";
+  candidates.sort((a, b) => b.score - a.score || Number(a.size || 0) - Number(b.size || 0));
+  const chosen = [];
+  const seen = new Set();
+  if (selectedPath) {
+    chosen.push({ path: selectedPath, name: shortFilename(selectedPath), score: 1000 });
+    seen.add(selectedPath);
+  }
+  for (const item of candidates) {
+    if (chosen.length >= 12) break;
+    if (seen.has(item.path)) continue;
+    seen.add(item.path);
+    chosen.push(item);
+  }
+
+  const snippets = [];
+  let chars = 0;
+  const maxChars = 52000;
+  for (const item of chosen) {
+    if (chars >= maxChars) break;
+    try {
+      const data = selectedFile?.path === item.path && typeof selectedFile?.content === "string"
+        ? { file: selectedFile }
+        : await api(`/api/work/file?path=${encodeURIComponent(item.path)}`);
+      let content = String(data.file?.content || "");
+      const remaining = maxChars - chars;
+      if (content.length > remaining) content = `${content.slice(0, Math.max(0, remaining - 80))}\n…[truncated by Work context limit]`;
+      snippets.push(`\n--- FILE: ${item.path} ---\n${content}`);
+      chars += content.length;
+    } catch (_) {}
+  }
+
+  return {
+    manifest: manifest.join("\n"),
+    snippets: snippets.join("\n"),
+    fileCount: manifest.filter((line) => line.startsWith("[F]")).length,
+    folderCount: manifest.filter((line) => line.startsWith("[D]")).length,
+    contextFiles: snippets.length,
+  };
 }
 
 function FolderRows({ path = "", depth = 0, selectedFile, onOpenFile }) {
@@ -140,17 +265,71 @@ function WorkPanel({ onClose }) {
   const [error, setError] = useState("");
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState([]);
-  const activeModel = localStorage.getItem("active-model") || "No local model loaded";
+  const [llmStatus, setLlmStatus] = useState({ ready: false, running: false, settings: {} });
+  const [thinking, setThinking] = useState(false);
+  const [contextStats, setContextStats] = useState({ fileCount: 0, folderCount: 0, contextFiles: 0 });
+  const [memoryLoaded, setMemoryLoaded] = useState(false);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
+  const abortRef = useRef(null);
 
-  const refreshStatus = async () => {
-    const data = await api("/api/work/status");
-    setProject(data.project || { connected: false });
-    if (data.project?.path) setManualPath(data.project.path);
-  };
+  const projectHash = useMemo(() => project.connected && project.path ? fnv1a(project.path) : "", [project.connected, project.path]);
+  const sessionId = projectHash ? `work-session-${projectHash}` : "";
+  const memoryId = projectHash ? `work-memory-${projectHash}` : "";
+  const activeModel = llmStatus.ready ? (shortFilename(llmStatus?.settings?.model) || "Local model") : "No local coding model loaded";
+
+  const refreshStatus = useCallback(async () => {
+    const [work, llm] = await Promise.all([
+      api("/api/work/status"),
+      getLlmStatus().catch(() => ({ ready: false, running: false, settings: {} })),
+    ]);
+    setProject(work.project || { connected: false });
+    if (work.project?.path) setManualPath(work.project.path);
+    setLlmStatus(llm || { ready: false, running: false, settings: {} });
+  }, []);
 
   useEffect(() => {
     refreshStatus().catch((err) => setError(err.message));
-  }, []);
+    const timer = setInterval(() => {
+      getLlmStatus().then(setLlmStatus).catch(() => {});
+    }, 3000);
+    const modelChanged = () => getLlmStatus().then(setLlmStatus).catch(() => {});
+    window.addEventListener("uls-work-coder-model-changed", modelChanged);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("uls-work-coder-model-changed", modelChanged);
+      abortRef.current?.abort();
+    };
+  }, [refreshStatus]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function restoreProjectSession() {
+      if (!projectHash) {
+        setMessages([]);
+        setMemoryLoaded(false);
+        setHistoryLoaded(false);
+        return;
+      }
+      try {
+        const conversations = await listLlmConversations();
+        const session = (conversations || []).find((item) => item.id === sessionId);
+        const memory = (conversations || []).find((item) => item.id === memoryId);
+        if (cancelled) return;
+        const restored = Array.isArray(session?.messages)
+          ? session.messages
+              .filter((item) => item?.role === "user" || item?.role === "assistant")
+              .map((item, index) => ({ id: `${sessionId}-${index}`, role: item.role, text: normalizeStoredContent(item.content) }))
+          : [];
+        setMessages(restored);
+        setHistoryLoaded(restored.length > 0);
+        setMemoryLoaded(Boolean(normalizeStoredContent(memory?.messages?.[0]?.content).trim()));
+      } catch (err) {
+        if (!cancelled) setError(err.message || String(err));
+      }
+    }
+    restoreProjectSession();
+    return () => { cancelled = true; };
+  }, [projectHash, sessionId, memoryId]);
 
   const chooseProject = async () => {
     setError("");
@@ -223,17 +402,113 @@ function WorkPanel({ onClose }) {
     }
   };
 
-  const sendPrompt = () => {
+  const persistSession = useCallback(async (nextMessages) => {
+    if (!sessionId || !project.connected) return;
+    await saveLlmConversation({
+      id: sessionId,
+      title: `Work: ${project.name || "Project"}`,
+      model: shortFilename(llmStatus?.settings?.model || "local-coder"),
+      timestamp: Date.now(),
+      projectPath: project.path,
+      kind: "work-session",
+      messages: nextMessages.map((item) => ({ role: item.role, content: item.text })),
+    });
+  }, [sessionId, project.connected, project.name, project.path, llmStatus?.settings?.model]);
+
+  const sendPrompt = async () => {
     const text = draft.trim();
-    if (!text) return;
-    setMessages((current) => [
-      ...current,
-      { id: `${Date.now()}-u`, role: "user", text },
-      { id: `${Date.now()}-a`, role: "assistant", text: "Project access is connected. Local coding-agent execution is the next Work phase; for now you can browse, open, edit, and save project files safely." },
-    ]);
+    if (!text || thinking) return;
+    if (!project.connected) {
+      setError("Open a project before asking Work to code.");
+      return;
+    }
+    if (!llmStatus.ready) {
+      setError("Load a local coding model from the Work model picker first.");
+      return;
+    }
+
+    setError("");
     setDraft("");
+    setThinking(true);
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const now = Date.now();
+    const userMessage = { id: `${now}-u`, role: "user", text };
+    const assistantMessage = { id: `${now}-a`, role: "assistant", text: "" };
+    const baseMessages = [...messages, userMessage];
+    setMessages([...baseMessages, assistantMessage]);
+
+    try {
+      const conversations = await listLlmConversations();
+      const memory = (conversations || []).find((item) => item.id === memoryId);
+      const memoryText = normalizeStoredContent(memory?.messages?.[0]?.content).trim();
+      setMemoryLoaded(Boolean(memoryText));
+
+      const selectedForContext = selectedFile
+        ? { ...selectedFile, content: dirty ? editorText : selectedFile.content }
+        : null;
+      const projectContext = await buildProjectContext(project, selectedForContext);
+      setContextStats({
+        fileCount: projectContext.fileCount,
+        folderCount: projectContext.folderCount,
+        contextFiles: projectContext.contextFiles,
+      });
+
+      const systemPrompt = [
+        "You are Work, a fully local coding assistant running inside Uncensored Local Studio.",
+        "Continue the same project across sessions. Use the supplied project memory, prior conversation history, file tree, and code snippets as authoritative context.",
+        "Do not claim you changed a file unless the user actually applies/saves an edit. In this phase, explain concrete changes and provide exact code or patches when edits are requested.",
+        "Prefer the project's existing architecture, libraries, naming conventions, and patterns. If context is incomplete, say which file you need the user to open rather than inventing it.",
+        `Project: ${project.name}`,
+        `Project path: ${project.path}`,
+        `Git: ${project.git ? `${project.branch || "detached"}, ${project.changes || 0} local change(s)` : "not a Git repository"}`,
+        memoryText ? `\nPERSISTENT PROJECT MEMORY (stored on USB):\n${memoryText}` : "\nPERSISTENT PROJECT MEMORY: none saved yet.",
+        `\nPROJECT FILE MANIFEST (bounded scan):\n${projectContext.manifest}`,
+        projectContext.snippets ? `\nCURRENT PROJECT FILE CONTENT:\n${projectContext.snippets}` : "",
+      ].filter(Boolean).join("\n");
+
+      const recentHistory = messages.slice(-12).map((item) => ({ role: item.role, content: item.text }));
+      const llmMessages = [
+        { role: "system", content: systemPrompt },
+        ...recentHistory,
+        { role: "user", content: text },
+      ];
+
+      let finalText = "";
+      const result = await streamChatWithLlm(llmMessages, {
+        temperature: 0.2,
+        maxTokens: 1800,
+        topP: 0.9,
+        topK: 40,
+        repeatPenalty: 1.08,
+        signal: controller.signal,
+      }, (token, content) => {
+        finalText = content || finalText + token;
+        setMessages([...baseMessages, { ...assistantMessage, text: finalText }]);
+      });
+
+      finalText = result?.content || finalText || "The local coding model returned no text.";
+      const completed = [...baseMessages, { ...assistantMessage, text: finalText }];
+      setMessages(completed);
+      await persistSession(completed);
+      setHistoryLoaded(true);
+    } catch (err) {
+      if (err?.name === "AbortError") {
+        const stopped = [...baseMessages, { ...assistantMessage, text: "Stopped." }];
+        setMessages(stopped);
+        await persistSession(stopped).catch(() => {});
+      } else {
+        setError(err.message || String(err));
+        setMessages(baseMessages);
+        await persistSession(baseMessages).catch(() => {});
+      }
+    } finally {
+      setThinking(false);
+      abortRef.current = null;
+    }
   };
 
+  const stopThinking = () => abortRef.current?.abort();
   const title = project.connected ? project.name : "No project selected";
 
   return (
@@ -246,9 +521,9 @@ function WorkPanel({ onClose }) {
           <span style={{ opacity: 0.82, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</span>
           {dirty && <span style={{ fontSize: 11, opacity: 0.7 }}>Unsaved</span>}
         </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginRight: 238 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "7px 10px", borderRadius: 9, border: "1px solid var(--md-sys-color-outline-variant, #343640)", fontSize: 12 }}>
-            <span style={{ width: 7, height: 7, borderRadius: "50%", background: activeModel === "No local model loaded" ? "#777" : "#55cf7a" }} />
+            <span style={{ width: 7, height: 7, borderRadius: "50%", background: llmStatus.ready ? "#55cf7a" : "#777" }} />
             <span style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{activeModel}</span>
           </div>
           <button className="m3-btn m3-btn-outlined" onClick={onClose}>Close</button>
@@ -299,15 +574,30 @@ function WorkPanel({ onClose }) {
               <div style={{ maxWidth: 620, textAlign: "center" }}>
                 <div style={{ width: 58, height: 58, margin: "0 auto 18px", borderRadius: 18, display: "grid", placeItems: "center", background: "var(--md-sys-color-primary-container, #302d58)" }}><Bot size={28} /></div>
                 <h2 style={{ margin: "0 0 8px", fontSize: 24 }}>Local Coding Work</h2>
-                <p style={{ opacity: 0.68, lineHeight: 1.55 }}>{project.connected ? "Your project is connected. Pick a file in Explorer to inspect or edit it." : "Open a project folder to give Work controlled access to that project only."}</p>
+                <p style={{ opacity: 0.68, lineHeight: 1.55 }}>{project.connected ? "Your project is connected. Work can now combine project files, prior Work history, and USB Project Memory when you chat." : "Open a project folder to give Work controlled access to that project only."}</p>
               </div>
             </div>
           )}
 
           <div style={{ padding: 10, borderTop: "1px solid var(--md-sys-color-outline-variant, #30313a)" }}>
             <div style={{ maxWidth: 820, margin: "0 auto", border: "1px solid var(--md-sys-color-outline-variant, #343640)", borderRadius: 12, background: "var(--md-sys-color-surface-container-low, #15161c)", overflow: "hidden" }}>
-              {messages.length > 0 && <div style={{ maxHeight: 130, overflow: "auto", padding: 10, fontSize: 12 }}>{messages.slice(-4).map((m) => <div key={m.id} style={{ marginBottom: 7, opacity: m.role === "user" ? 0.9 : 0.65 }}><strong>{m.role === "user" ? "You" : "Work"}:</strong> {m.text}</div>)}</div>}
-              <div style={{ display: "flex", gap: 8, padding: 8 }}><input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); sendPrompt(); } }} placeholder="Ask Work about this project…" style={{ flex: 1, border: 0, outline: 0, background: "transparent", color: "inherit", padding: "6px 7px" }} /><button onClick={sendPrompt} style={{ border: 0, borderRadius: 8, padding: "8px 10px", background: "var(--md-sys-color-primary, #c5c1ff)", color: "var(--md-sys-color-on-primary, #292653)", cursor: "pointer" }}><Send size={15} /></button></div>
+              {messages.length > 0 && (
+                <div style={{ maxHeight: 220, overflow: "auto", padding: 10, fontSize: 12 }}>
+                  {messages.slice(-8).map((m) => (
+                    <div key={m.id} style={{ marginBottom: 9, lineHeight: 1.45, opacity: m.role === "user" ? 0.92 : 0.75, whiteSpace: "pre-wrap" }}>
+                      <strong>{m.role === "user" ? "You" : "Work"}:</strong> {m.text || (thinking && m.role === "assistant" ? "Thinking…" : "")}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 8, padding: 8 }}>
+                <input disabled={thinking} value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); sendPrompt(); } }} placeholder={llmStatus.ready ? "Ask Work about this project…" : "Load a local coding model first…"} style={{ flex: 1, border: 0, outline: 0, background: "transparent", color: "inherit", padding: "6px 7px", opacity: thinking ? .55 : 1 }} />
+                {thinking ? (
+                  <button onClick={stopThinking} title="Stop" style={{ border: 0, borderRadius: 8, padding: "8px 10px", background: "var(--md-sys-color-error-container, #5c1d1d)", color: "var(--md-sys-color-on-error-container, #ffdada)", cursor: "pointer" }}><X size={15} /></button>
+                ) : (
+                  <button onClick={sendPrompt} style={{ border: 0, borderRadius: 8, padding: "8px 10px", background: "var(--md-sys-color-primary, #c5c1ff)", color: "var(--md-sys-color-on-primary, #292653)", cursor: "pointer" }}><Send size={15} /></button>
+                )}
+              </div>
             </div>
           </div>
         </main>
@@ -319,6 +609,10 @@ function WorkPanel({ onClose }) {
             <div><strong>Git</strong><div style={{ marginTop: 3, opacity: 0.65 }}>{project.git ? `${project.branch || "detached"} • ${project.changes || 0} change(s)` : "No Git repository detected"}</div></div>
             <div><strong>Editor</strong><div style={{ marginTop: 3, opacity: 0.65 }}>{selectedFile ? selectedFile.path : "No file open"}</div></div>
             <div><strong>Model</strong><div style={{ marginTop: 3, opacity: 0.65, wordBreak: "break-word" }}>{activeModel}</div></div>
+            <div><strong>Work history</strong><div style={{ marginTop: 3, opacity: 0.65 }}>{historyLoaded ? "Restored from USB" : messages.length ? "Saving on USB" : "No previous session"}</div></div>
+            <div><strong>Project Memory</strong><div style={{ marginTop: 3, opacity: 0.65 }}>{memoryLoaded ? "Loaded from USB" : "No saved memory yet"}</div></div>
+            <div><strong>Context scan</strong><div style={{ marginTop: 3, opacity: 0.65 }}>{contextStats.contextFiles ? `${contextStats.contextFiles} files supplied • ${contextStats.fileCount} files indexed` : "Built on first prompt"}</div></div>
+            {thinking && <div style={{ display: "flex", alignItems: "center", gap: 7, opacity: .8 }}><Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> Local model working…</div>}
           </div>
         </aside>
       </div>
