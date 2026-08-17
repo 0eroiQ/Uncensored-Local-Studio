@@ -35,6 +35,7 @@ PLATFORM_LABEL="macOS"
 DIST_INDEX="$APP_DIR/dist/index.html"
 SETUP_SCRIPT="$SCRIPT_DIR/scripts/setup/setup.sh"
 SERVE_SCRIPT="$SCRIPT_DIR/scripts/server/serve.cjs"
+UPDATER_PRELOAD="$SCRIPT_DIR/scripts/server/updater-preload.cjs"
 
 FRONTEND_PORT="${FRONTEND_PORT:-1420}"
 LLM_PORT="${LLM_PORT:-10086}"
@@ -222,8 +223,13 @@ echo "  Starting Uncensored AI Studio..."
 export PATH="$NODE_DIR/bin:$PATH"
 export FRONTEND_PORT="$FRONTEND_PORT"
 
-# Run server in background and capture PID
-"$NODE_BIN" "$SERVE_SCRIPT" &
+# Run server in background and capture PID. The updater preload adds the
+# /api/update/* routes without changing the main portable server.
+if [[ -f "$UPDATER_PRELOAD" ]]; then
+  "$NODE_BIN" -r "$UPDATER_PRELOAD" "$SERVE_SCRIPT" &
+else
+  "$NODE_BIN" "$SERVE_SCRIPT" &
+fi
 SERVER_PID=$!
 
 # Wait for server to be ready
@@ -264,6 +270,16 @@ cleanup() {
 }
 trap cleanup SIGINT SIGTERM
 
-# Keep script alive
-wait "$SERVER_PID" || true
+# Keep script alive. Exit code 75 is reserved for an in-app updater restart.
+set +e
+wait "$SERVER_PID"
+SERVER_EXIT=$?
+set -e
+
+if [[ "$SERVER_EXIT" -eq 75 ]]; then
+  echo ""
+  echo "  Update installed. Restarting Local AI Studio..."
+  exec "$SCRIPT_DIR/mac.sh"
+fi
+
 cleanup
