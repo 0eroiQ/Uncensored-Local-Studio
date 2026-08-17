@@ -5,6 +5,7 @@ import WorkIntegration from "./components/WorkIntegration";
 import WorkCodingModelsIntegration from "./components/WorkCodingModelsIntegration";
 import WorkDownloadMonitor from "./components/WorkDownloadMonitor";
 import WorkAgentIntegration from "./components/WorkAgentIntegration";
+import WorkHandoffIntegration from "./components/WorkHandoffIntegration";
 import UpdateIntegration from "./components/UpdateIntegration";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
@@ -14,6 +15,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
     <WorkCodingModelsIntegration />
     <WorkDownloadMonitor />
     <WorkAgentIntegration />
+    <WorkHandoffIntegration />
     <UpdateIntegration />
   </React.StrictMode>,
 );
