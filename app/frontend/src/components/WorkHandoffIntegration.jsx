@@ -75,6 +75,34 @@ async function writeProjectHandoff(existingFile, content) {
   return { path: data.change?.path || "WORK_HANDOFF.md", mtimeMs: data.change?.mtimeMs || 0, content };
 }
 
+function launchAgentWithPrompt(prompt) {
+  const findComposer = () => [...document.querySelectorAll("textarea")].find((node) =>
+    String(node.getAttribute("placeholder") || "").includes("Ask Work to inspect")
+  );
+
+  let attempts = 0;
+  const tryLaunch = () => {
+    attempts += 1;
+    const textarea = findComposer();
+    if (!textarea) {
+      if (attempts < 20) setTimeout(tryLaunch, 120);
+      return;
+    }
+
+    const valueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set;
+    if (valueSetter) valueSetter.call(textarea, prompt);
+    else textarea.value = prompt;
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    textarea.dispatchEvent(new Event("change", { bubbles: true }));
+
+    setTimeout(() => {
+      const button = [...document.querySelectorAll("button")].find((node) => node.getAttribute("title") === "Run whole-project agent");
+      if (button && !button.disabled) button.click();
+    }, 180);
+  };
+  setTimeout(tryLaunch, 120);
+}
+
 function HandoffPanel({ onClose }) {
   const [project, setProject] = useState({ connected: false, path: "", name: "" });
   const [text, setText] = useState("");
@@ -143,8 +171,8 @@ function HandoffPanel({ onClose }) {
           "Do not redo work that is already complete.",
           "Identify the next unfinished task from the handoff, continue it, and use the normal Work safety rules for edits and commands.",
         ].join(" ");
-        window.dispatchEvent(new CustomEvent("uls-work-agent-run", { detail: { prompt, source: "chatgpt-handoff" } }));
         onClose();
+        launchAgentWithPrompt(prompt);
       }
     } catch (err) {
       setError(err.message || String(err));
