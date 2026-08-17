@@ -12,7 +12,7 @@ const STATE_FILE = path.join(STATE_DIR, "update-state.json");
 const REPO = "0eroiQ/Uncensored-Local-Studio";
 const BRANCH = "main";
 const API_COMMIT_URL = `https://api.github.com/repos/${REPO}/commits/${BRANCH}`;
-const ZIP_URL = `https://codeload.github.com/${REPO}/zip/refs/heads/${BRANCH}`;
+const GIT_REMOTE_URL = `https://github.com/${REPO}.git`;
 
 let busy = false;
 let progress = { active: false, phase: "Idle", progress: 0, error: "", restartRequired: false };
@@ -73,6 +73,11 @@ function fetchJson(url, redirects = 0) {
       res.setEncoding("utf8");
       res.on("data", (chunk) => { body += chunk; });
       res.on("end", () => {
+        const contentType = String(res.headers["content-type"] || "");
+        if (!contentType.includes("json")) {
+          reject(new Error(`GitHub API returned ${contentType || "non-JSON content"} (HTTP ${res.statusCode}).`));
+          return;
+        }
         try {
           const parsed = JSON.parse(body || "{}");
           if (res.statusCode < 200 || res.statusCode >= 300) {
@@ -88,6 +93,49 @@ function fetchJson(url, redirects = 0) {
     req.on("error", reject);
     req.on("timeout", () => req.destroy(new Error("GitHub request timed out.")));
   });
+}
+
+function resolveLatestWithGit() {
+  const result = spawnSync("git", ["ls-remote", GIT_REMOTE_URL, `refs/heads/${BRANCH}`], {
+    encoding: "utf8",
+    timeout: 30000,
+  });
+  if (result.status !== 0) {
+    throw new Error((result.stderr || result.stdout || "git ls-remote failed").trim());
+  }
+  const first = String(result.stdout || "").trim().split(/\s+/)[0] || "";
+  if (!/^[0-9a-f]{40}$/i.test(first)) throw new Error("git ls-remote did not return a valid commit SHA.");
+  return first;
+}
+
+async function resolveLatestCommit() {
+  try {
+    const latest = await fetchJson(API_COMMIT_URL);
+    const sha = String(latest.sha || "");
+    if (!/^[0-9a-f]{40}$/i.test(sha)) throw new Error("GitHub API did not return a valid commit SHA.");
+    return {
+      sha,
+      date: latest.commit?.committer?.date || latest.commit?.author?.date || "",
+      message: latest.commit?.message || "",
+      source: "github-api",
+      warning: "",
+    };
+  } catch (apiError) {
+    try {
+      const sha = resolveLatestWithGit();
+      return {
+        sha,
+        date: "",
+        message: "",
+        source: "git-ls-remote",
+        warning: `GitHub API check failed; used git fallback instead. ${apiError.message || apiError}`,
+      };
+    } catch (gitError) {
+      const err = new Error(`Could not verify GitHub main. API: ${apiError.message || apiError} Git fallback: ${gitError.message || gitError}`);
+      err.code = "REMOTE_CHECK_FAILED";
+      throw err;
+    }
+  }
 }
 
 function download(url, dest, redirects = 0) {
@@ -165,16 +213,20 @@ const SOURCE_PATHS = [
   path.join("app", "frontend"),
 ];
 
+const BACKUP_EXTRA_PATHS = [path.join("app", "dist")];
+
 function snapshotCurrentSource(metadata = {}) {
   fs.rmSync(BACKUP_DIR, { recursive: true, force: true });
   ensureDir(BACKUP_DIR);
   for (const rel of SOURCE_PATHS) copyPath(path.join(ROOT, rel), path.join(BACKUP_DIR, rel));
+  for (const rel of BACKUP_EXTRA_PATHS) copyPath(path.join(ROOT, rel), path.join(BACKUP_DIR, rel));
   fs.writeFileSync(path.join(BACKUP_DIR, "backup-meta.json"), JSON.stringify(metadata, null, 2), "utf8");
 }
 
 function restoreBackup() {
   if (!fs.existsSync(BACKUP_DIR)) throw new Error("No rollback backup is available.");
   for (const rel of SOURCE_PATHS) copyPath(path.join(BACKUP_DIR, rel), path.join(ROOT, rel));
+  for (const rel of BACKUP_EXTRA_PATHS) copyPath(path.join(BACKUP_DIR, rel), path.join(ROOT, rel));
 }
 
 function overlaySource(sourceRoot) {
@@ -214,24 +266,50 @@ function buildFrontend() {
 
 async function getStatus() {
   const state = readState();
-  const latest = await fetchJson(API_COMMIT_URL);
-  const latestSha = String(latest.sha || "");
   const installedSha = String(state.installedSha || "");
-  return {
-    ok: true,
-    repo: REPO,
-    branch: BRANCH,
-    installedSha,
-    installedShort: shortSha(installedSha),
-    latestSha,
-    latestShort: shortSha(latestSha),
-    updateAvailable: !installedSha || installedSha !== latestSha,
-    installedAt: state.installedAt || "",
-    latestDate: latest.commit?.committer?.date || latest.commit?.author?.date || "",
-    latestMessage: latest.commit?.message || "",
-    rollbackAvailable: fs.existsSync(path.join(BACKUP_DIR, "backup-meta.json")),
-    progress,
-  };
+  try {
+    const latest = await resolveLatestCommit();
+    const latestSha = latest.sha;
+    return {
+      ok: true,
+      repo: REPO,
+      branch: BRANCH,
+      installedSha,
+      installedShort: shortSha(installedSha),
+      latestSha,
+      latestShort: shortSha(latestSha),
+      updateAvailable: !installedSha || installedSha !== latestSha,
+      remoteVerified: true,
+      remoteError: "",
+      remoteSource: latest.source,
+      remoteWarning: latest.warning,
+      installedAt: state.installedAt || "",
+      latestDate: latest.date,
+      latestMessage: latest.message,
+      rollbackAvailable: fs.existsSync(path.join(BACKUP_DIR, "backup-meta.json")),
+      progress,
+    };
+  } catch (err) {
+    return {
+      ok: true,
+      repo: REPO,
+      branch: BRANCH,
+      installedSha,
+      installedShort: shortSha(installedSha),
+      latestSha: "",
+      latestShort: "unknown",
+      updateAvailable: false,
+      remoteVerified: false,
+      remoteError: err.message || String(err),
+      remoteSource: "",
+      remoteWarning: "",
+      installedAt: state.installedAt || "",
+      latestDate: "",
+      latestMessage: "",
+      rollbackAvailable: fs.existsSync(path.join(BACKUP_DIR, "backup-meta.json")),
+      progress,
+    };
+  }
 }
 
 async function applyUpdate() {
@@ -240,9 +318,8 @@ async function applyUpdate() {
   progress = { active: true, phase: "Checking GitHub...", progress: 2, error: "", restartRequired: false };
   const previous = readState();
   try {
-    const latest = await fetchJson(API_COMMIT_URL);
-    const latestSha = String(latest.sha || "");
-    if (!latestSha) throw new Error("Could not determine the latest GitHub commit.");
+    const latest = await resolveLatestCommit();
+    const latestSha = latest.sha;
     if (previous.installedSha === latestSha) {
       progress = { active: false, phase: "Already up to date", progress: 100, error: "", restartRequired: false };
       return { alreadyCurrent: true, latestSha };
@@ -252,10 +329,11 @@ async function applyUpdate() {
     ensureDir(UPDATE_DIR);
     const zipPath = path.join(UPDATE_DIR, "latest.zip");
     const extractDir = path.join(UPDATE_DIR, "extract");
+    const exactZipUrl = `https://codeload.github.com/${REPO}/zip/${latestSha}`;
 
-    progress.phase = "Downloading latest source...";
+    progress.phase = "Downloading exact GitHub commit...";
     progress.progress = 5;
-    await download(ZIP_URL, zipPath);
+    await download(exactZipUrl, zipPath);
 
     progress.phase = "Creating rollback backup...";
     progress.progress = 50;
@@ -277,7 +355,6 @@ async function applyUpdate() {
     } catch (err) {
       progress.phase = "Build failed — restoring previous version...";
       restoreBackup();
-      try { buildFrontend(); } catch (_) {}
       throw err;
     }
 
@@ -301,9 +378,6 @@ async function rollback() {
     if (!fs.existsSync(metaPath)) throw new Error("No rollback backup is available.");
     const meta = JSON.parse(fs.readFileSync(metaPath, "utf8"));
     restoreBackup();
-    progress.phase = "Rebuilding previous interface...";
-    progress.progress = 75;
-    buildFrontend();
     writeState(meta.previousState || { installedSha: "", installedAt: "" });
     progress = { active: false, phase: "Rollback complete", progress: 100, error: "", restartRequired: true };
     return { restartRequired: true };
